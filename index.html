@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>GT Wallpaper – v3.3 (timer popup + stall-skip)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
+    #player { position:fixed; inset:0; }
+
+    .click-catcher { position: fixed; inset: 0; z-index: 5; background: transparent; cursor: pointer; }
+
+    .ui-layer { position: fixed; inset: 0; z-index: 10; opacity: 0; transition: opacity .18s ease; pointer-events: none; }
+    body:hover .ui-layer { opacity: 1; }
+
+    .reset-wrap { position: fixed; top: 12px; left: 12px; display:flex; gap:8px; pointer-events: auto; }
+    .top-btn {
+      display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+      border:1px solid rgba(255,255,255,.2); background: rgba(0,0,0,.45); color:#fff;
+      padding:6px 10px; border-radius:10px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    .top-btn svg { width:16px; height:16px; }
+
+    .chip {
+      position: fixed;
+      background: rgba(0,0,0,.45);
+      border: 1px solid rgba(255,255,255,.15);
+      backdrop-filter: blur(6px);
+      border-radius: 14px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,.6);
+      user-select: none;
+      pointer-events: auto;
+      overflow: hidden;
+      touch-action: none;
+    }
+    .chip.centered { left: 50%; transform: translateX(-50%); }
+    #chip-title.centered { top: 42%; }
+    #chip-controls.centered { top: 58%; }
+
+    #titleContent { position:absolute; inset:0; box-sizing: border-box; padding: 10px 14px; display:flex; align-items:center; justify-content:center; }
+    .title-wrap {
+      margin: 0 auto; width: 100%;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      font-weight: 600; letter-spacing: .2px; text-align: center;
+      line-height: 1.15; overflow-wrap: break-word; word-break: normal;
+      padding-top: 0.06em;      /* a touch up top */
+      padding-bottom: 0.16em;   /* extra for descenders */
+    }
+
+    /* copy button shown only when hovering the title chip */
+    .title-copy {
+      position: absolute; right: 8px; top: 8px; z-index: 2;
+      display:inline-flex; align-items:center; gap:6px; height:28px;
+      border:1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.38);
+      padding:0 10px; border-radius:9px; cursor:pointer; color:#fff; font-size:12px;
+      opacity:0; transform: translateY(-4px); transition: opacity .16s ease, transform .16s ease, background .12s ease, border-color .12s ease;
+      pointer-events: none;
+    }
+    #chip-title:hover .title-copy { opacity:1; transform: translateY(0); pointer-events: auto; }
+    .title-copy:active { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.35); }
+    .title-copy svg { width:14px; height:14px; }
+
+    .content { position:absolute; inset:0; transform-origin: top left; }
+
+    .controls-wrap {
+      padding: 10px 0 10px 24px;   /* LEFT padding = 24 */
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      display: inline-flex; gap: 8px; flex-wrap: nowrap; align-items: center; justify-content: center;
+    }
+    .controls-wrap::after { content:""; flex:0 0 30px; } /* RIGHT spacer = 30 */
+
+    .btn {
+      display:inline-flex; align-items:center; justify-content:center;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.12);
+      color:#fff; padding:0 12px; border-radius:10px; font-size:14px; cursor:pointer;
+      height:36px; line-height:36px; white-space:nowrap;
+      transition:background .12s ease, border-color .12s ease, filter .12s ease;
+      will-change:background, border-color, filter;
+    }
+    .btn:active { background:rgba(255,255,255,.22); border-color:rgba(255,255,255,.35); }
+    .btn.toggled { background:rgba(255,255,255,.24); border-color:rgba(255,255,255,.55); }
+    .btn:focus { outline:none; }
+    .btn svg { width:16px; height:16px; margin-right:6px; flex:0 0 auto; }
+
+    .volwrap { display:inline-flex; align-items:center; gap:8px; height:36px; }
+    .volwrap svg { width:16px; height:16px; }
+
+    /* volume track + squared thumb */
+    input[type="range"] { -webkit-appearance:none; appearance:none; width:160px; background:transparent; height:36px; cursor:pointer; }
+    input[type="range"]::-webkit-slider-runnable-track { height:4px; background:rgba(255,255,255,.35); border-radius:6px; }
+    input[type="range"]::-moz-range-track { height:4px; background:rgba(255,255,255,.35); border-radius:6px; }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance:none; appearance:none; width:18px; height:18px; border-radius:6px; background:#fff; border:1px solid rgba(255,255,255,.45);
+      margin-top:-7px; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.35);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width:18px; height:18px; border-radius:6px; background:#fff; border:1px solid rgba(255,255,255,.45);
+      cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.35);
+    }
+
+    .dragging { box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+
+    .handle.br { position: absolute; width:18px; height:18px; right:6px; bottom:6px; cursor:nwse-resize; }
+    .handle.br::before { content:""; position:absolute; inset:0; background:repeating-linear-gradient(-45deg, rgba(255,255,255,.75) 0 2px, transparent 2px 6px); clip-path:polygon(100% 0, 0 100%, 100% 100%); opacity:.9; }
+
+    /* ===== Modal base ===== */
+    .modal[hidden] { display:none; }
+    .modal { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+    .modal .backdrop { position:absolute; inset:0; background: rgba(0,0,0,.5); backdrop-filter: blur(2px); pointer-events: auto; }
+    .modal .card {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: min(720px, 94vw);
+      background: rgba(20,20,20,.95);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 14px;
+      color: #fff; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      padding: 16px; pointer-events: auto; box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    }
+    .modal .title { font-weight:700; font-size:16px; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; }
+    .modal .close { cursor:pointer; border:none; background:transparent; color:#fff; font-size:18px; line-height:1; padding:6px; border-radius:8px; }
+    .modal .close:hover { background:rgba(255,255,255,.1); }
+    .row { margin: 10px 0; }
+    .label { font-size:13px; opacity:.9; margin-bottom:6px; }
+
+    /* Share modal specifics */
+    .copyline { display:flex; gap:8px; align-items:center; width:100%; }
+    .copybox {
+      flex: 1 1 auto; min-width: 260px;
+      background: rgba(255,255,255,.08); color:#fff; border:1px solid rgba(255,255,255,.15);
+      border-radius:10px; height:36px; line-height:36px; padding:0 10px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+    }
+    .action {
+      display:inline-flex; align-items:center; gap:8px; height:36px;
+      border:1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.12);
+      padding:0 12px; border-radius:10px; cursor:pointer; color:#fff; text-decoration:none;
+    }
+    .action:disabled { opacity:.5; cursor:not-allowed; }
+    .action:active:not(:disabled) { background: rgba(255,255,255,.22); }
+
+    .store-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap:10px; }
+    .store-btn { justify-content:center; }
+    .smallnote { opacity:.7; font-size:12px; margin-top:6px; }
+
+    /* Timer modal specifics */
+    .timer-grid { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .timer-inputs { display:flex; align-items:center; gap:6px; }
+    .timer-inputs input {
+      width:64px; height:36px; box-sizing:border-box;
+      background: rgba(255,255,255,.08); color:#fff; border:1px solid rgba(255,255,255,.18);
+      border-radius:8px; outline:none; padding:0 10px; font-size:14px;
+    }
+    .timer-inputs input::placeholder { color: rgba(255,255,255,.6); }
+    .sep { opacity:.4; font-size:12px; margin:0 2px; }
+
+    .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); z-index: 30; background: rgba(255,255,255,.95); color:#000; padding:8px 12px; border-radius: 10px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 13px; border: 1px solid rgba(0,0,0,.12); box-shadow: 0 6px 24px rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <div class="click-catcher" id="clickCatcher" title="Click to mute/unmute"></div>
+
+  <div class="ui-layer" id="uiLayer">
+    <div class="reset-wrap">
+      <button class="top-btn" id="resetBtn" title="Reset layout">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z" fill="currentColor"/></svg>
+        Reset Layout
+      </button>
+      <button class="top-btn" id="timerOpen" title="Auto-reset timer">
+        <svg viewBox="0 0 24 24"><path d="M15 1H9v2h6V1zM11 8h2v5h-2V8zm1-6a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" fill="currentColor"/></svg>
+        Timer
+      </button>
+    </div>
+
+    <div class="chip centered" id="chip-title" data-key="title">
+      <button class="title-copy" id="titleCopyBtn" title="Copy title">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10V1zm3 4H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H10V7h9v14z" fill="currentColor"/></svg>
+        Copy
+      </button>
+      <div id="titleContent"><div class="title-wrap" id="vidTitle"></div></div>
+      <div class="handle br"></div>
+    </div>
+
+    <div class="chip centered" id="chip-controls" data-key="controls" data-lock-aspect="1">
+      <div class="content" id="controlsContent">
+        <div class="controls-wrap" id="controlsInner">
+          <button class="btn" id="prevBtn"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM10 12 20 5v14z" fill="currentColor"/></svg>Prev</button>
+          <button class="btn" id="playPauseBtn"><svg id="playPauseIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>Play</button>
+          <button class="btn" id="nextBtn"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 19V5l10 7z" fill="currentColor"/></svg>Next</button>
+          <button class="btn" id="muteBtn"><svg id="muteIcon" viewBox="0 0 24 24"><path d="M3 10v4h4l5 4V6L7 10H3z" fill="currentColor"/></svg>Unmute</button>
+          <button class="btn btn--cc" id="ccBtn" aria-pressed="false">CC</button>
+          <button class="btn" id="shuffleBtn"><svg id="shuffleIcon" viewBox="0 0 24 24"><path d="M17 3h4v4h-2V5h-2V3zM7 7l10 10h2v-2h2v4h-4v-2L7 9 5 7h2zM17 13h2v-2h2v4h-4v-2z" fill="currentColor"/></svg>Shuffle</button>
+          <button class="btn" id="shareBtn" title="Share / copy links"><svg viewBox="0 0 24 24"><path d="M16 8a3 3 0 1 0-2.82-4H13a3 3 0 0 0 0 6c.37 0 .72-.07 1.05-.19l-6.1 3.05a3 3 0 1 0 0 2.28l6.1 3.05A3 3 0 1 0 16 16c-.37 0-.72.07-1.05.19l-6.1-3.05A3 3 0 0 0 9 12c0-.4-.08-.78-.23-1.13l6.18-3.09c.33 .14.69 .22 1.05 .22z" fill="currentColor"/></svg>Share</button>
+
+          <div class="volwrap">
+            <svg viewBox="0 0 24 24"><path d="M3 10v4h4l5 4V6L7 10H3zM16 8a4 4 0 0 1 0 8m2-10a 6 6 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+            <input id="vol" type="range" min="0" max="100" value="50">
+          </div>
+        </div>
+      </div>
+      <div class="handle br"></div>
+    </div>
+  </div>
+
+  <!-- Share Modal -->
+  <div class="modal" id="shareModal" hidden>
+    <div class="backdrop" id="shareBackdrop"></div>
+    <div class="card">
+      <div class="title">
+        <span>Share current video</span>
+        <button class="close" id="shareClose" aria-label="Close">✕</button>
+      </div>
+
+      <div class="row">
+        <div class="label">YouTube link</div>
+        <div class="copyline">
+          <div class="copybox" id="ytUrl" title=""></div>
+          <button class="action" id="ytCopy">Copy</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="label">Copy link to store search</div>
+        <div class="store-grid" id="storeGrid"></div>
+        <div class="smallnote">These open each store’s search for the cleaned title.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timer Modal -->
+  <div class="modal" id="timerModal" hidden>
+    <div class="backdrop" id="timerBackdrop"></div>
+    <div class="card">
+      <div class="title">
+        <span>Auto-reset timer</span>
+        <button class="close" id="timerClose" aria-label="Close">✕</button>
+      </div>
+
+      <div class="row">
+        <div class="label">Reload the page after this duration (leave blank for no auto-reset)</div>
+        <div class="timer-grid">
+          <div class="timer-inputs">
+            <input type="number" id="tHours" min="0" placeholder="hh" title="Hours">
+            <span class="sep">:</span>
+            <input type="number" id="tMins" min="0" max="59" placeholder="mm" title="Minutes">
+            <span class="sep">:</span>
+            <input type="number" id="tSecs" min="0" max="59" placeholder="ss" title="Seconds">
+          </div>
+          <button class="action" id="tApply">Apply</button>
+          <button class="action" id="tClear">Clear</button>
+        </div>
+      </div>
+      <div class="smallnote">Tip: if a reload lands on an unplayable video, the page will auto-skip until something actually plays.</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Copied!</div>
+
+  <script>
+    let player, watchdog;
+    let ccEnabled = false;
+    let shuffleEnabled = false;
+
+    // Auto-reset timer
+    let autoResetTimer = null;
+    let autoResetDeadline = null;
+    const TIMER_KEY = 'gtwp_autoreset_ms';
+
+    const clickCatcher = document.getElementById('clickCatcher');
+    const titleChip    = document.getElementById('chip-title');
+    const titleContent = document.getElementById('titleContent');
+    const controlsChip = document.getElementById('chip-controls');
+    const controlsContent = document.getElementById('controlsContent');
+    const controlsInner= document.getElementById('controlsInner');
+    const vidTitleEl   = document.getElementById('vidTitle');
+
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const playPauseIcon= document.getElementById('playPauseIcon');
+    const muteBtn      = document.getElementById('muteBtn');
+    const muteIcon     = document.getElementById('muteIcon');
+    const ccBtn        = document.getElementById('ccBtn');
+    const shuffleBtn   = document.getElementById('shuffleBtn');
+    const shareBtn     = document.getElementById('shareBtn');
+    const volSlider    = document.getElementById('vol');
+    const prevBtn      = document.getElementById('prevBtn');
+    const nextBtn      = document.getElementById('nextBtn');
+    const resetBtn     = document.getElementById('resetBtn');
+
+    // top-left timer open
+    const timerOpenBtn = document.getElementById('timerOpen');
+
+    // Share modal bits
+    const shareModal   = document.getElementById('shareModal');
+    const shareBackdrop= document.getElementById('shareBackdrop');
+    const shareClose   = document.getElementById('shareClose');
+    const ytUrlBox     = document.getElementById('ytUrl');
+    const ytCopyBtn    = document.getElementById('ytCopy');
+    const storeGrid    = document.getElementById('storeGrid');
+
+    // Title copy
+    const titleCopyBtn = document.getElementById('titleCopyBtn');
+
+    // Timer modal bits
+    const timerModal   = document.getElementById('timerModal');
+    const timerBackdrop= document.getElementById('timerBackdrop');
+    const timerClose   = document.getElementById('timerClose');
+    const tHours = document.getElementById('tHours');
+    const tMins  = document.getElementById('tMins');
+    const tSecs  = document.getElementById('tSecs');
+    const tApply = document.getElementById('tApply');
+    const tClear = document.getElementById('tClear');
+
+    const toast        = document.getElementById('toast');
+
+    (function(){ const s=document.createElement('script'); s.src="https://www.youtube.com/iframe_api"; document.head.appendChild(s); })();
+
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        width: '100%', height: '100%',
+        playerVars: {
+          listType: 'user_uploads', list: 'GameTrailers',
+          autoplay: 1, mute: 1, controls: 0, rel: 0, fs: 0, disablekb: 0,
+          modestbranding: 1, iv_load_policy: 3, playsinline: 1,
+          origin: window.location.origin
+        },
+        events: { onReady, onStateChange, onError }
+      });
+    }
+
+    function lockButtonWidth(btn, texts) {
+      const clone = btn.cloneNode(true);
+      clone.style.position = 'absolute'; clone.style.visibility='hidden';
+      clone.style.left='-9999px'; clone.style.width='auto';
+      document.body.appendChild(clone);
+      if (!clone.lastChild || clone.lastChild.nodeType !== Node.TEXT_NODE) clone.appendChild(document.createTextNode(''));
+      let max = 0;
+      for (const t of texts){ clone.lastChild.nodeValue = t; max = Math.max(max, Math.ceil(clone.getBoundingClientRect().width)); }
+      document.body.removeChild(clone);
+      btn.style.minWidth = max + 'px';
+    }
+
+    function onReady() {
+      try { player.mute(); player.setVolume(50); player.playVideo(); } catch {}
+      initControlsBaseline(); restoreBox(titleChip); restoreBox(controlsChip);
+      lockButtonWidth(muteBtn, [' Mute',' Unmute']); lockButtonWidth(playPauseBtn, [' Play',' Pause']);
+      scaleControlsToBox(); updateTitle(true); updateUI(); attachHandlers();
+
+      // Restore auto-reset if present
+      restoreAutoReset();
+
+      requestAnimationFrame(()=>{
+        lockButtonWidth(muteBtn, [' Mute',' Unmute']);
+        lockButtonWidth(playPauseBtn, [' Play',' Pause']);
+        scaleControlsToBox();
+      });
+
+      // Kick past an unplayable first video after reload
+      ensurePlayingOrSkip();
+    }
+
+    function onStateChange(e) {
+      if (e.data === YT.PlayerState.ENDED) {
+        if (shuffleEnabled) playRandom(); else nextVideo();
+      } else if (e.data === YT.PlayerState.PLAYING) {
+        clearWatchdog(); updateUI();
+      } else if (
+        e.data === YT.PlayerState.UNSTARTED ||
+        e.data === YT.PlayerState.CUED ||
+        e.data === YT.PlayerState.BUFFERING
+      ) {
+        resetWatchdog(10000); // give buffering a little more time
+        setTitleText('');
+      }
+      updateTitle(true);
+    }
+
+    function onError(){
+      shuffleEnabled ? playRandom() : nextVideo();
+      setTimeout(() => ensurePlayingOrSkip(6), 900);
+    }
+
+    // keep hopping until a video is actually playing
+    function ensurePlayingOrSkip(hops = 8) {
+      const st = safe(() => player.getPlayerState());
+      if (st === YT.PlayerState.PLAYING) return;
+      try { player.playVideo(); } catch {}
+      setTimeout(() => {
+        const s2 = safe(() => player.getPlayerState());
+        if (s2 !== YT.PlayerState.PLAYING) {
+          try { shuffleEnabled ? playRandom() : player.nextVideo(); } catch {}
+        }
+        if (hops > 1) setTimeout(() => ensurePlayingOrSkip(hops - 1), 600);
+      }, 1200);
+    }
+
+    /* ===== Title cleaner: cut after last " - " / " – " only if tail is promo ===== */
+    function cleanTitle(raw) {
+      if (!raw) return '';
+      let t = String(raw)
+        .replace(/[™®©]/g, '')
+        .replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // remove channel prefixes like "GameTrailers - "
+      t = t.replace(/^\s*(?:gametrailers|official|playstation|xbox|nintendo|ign|gamespot)\s*[:\-|]\s*/i, '');
+
+      const PROMO_WORDS = [
+        'official','trailer','teaser','gameplay','demo','cinematic','walkthrough','overview','reveal',
+        'announcement','extended','launch','beta','alpha','4k','8k','1080p','60fps','ray ?tracing','hdr',
+        'ps\\d','xbox','series ?x\\|s','switch','pc','dlc','season','update','patch','live[- ]action'
+      ];
+      const promoStartRx = new RegExp(`^(?:${PROMO_WORDS.join('|')})\\b`, 'i');
+
+      const spots = [];
+      for (let i = t.indexOf(' - '); i !== -1; i = t.indexOf(' - ', i + 1)) spots.push({i, len:3});
+      for (let j = t.indexOf(' – '); j !== -1; j = t.indexOf(' – ', j + 1)) spots.push({i:j, len:3});
+      spots.sort((a,b)=>b.i - a.i);
+
+      for (const s of spots) {
+        const tail = t.slice(s.i + s.len).trim();
+        if (promoStartRx.test(tail)) { t = t.slice(0, s.i).trim(); break; }
+      }
+
+      t = t.replace(/\s*\[[^\]]*]\s*$/g, '').replace(/\s{2,}/g, ' ').replace(/[\s\-:|–—]+$/,'').trim();
+      return t || raw.trim();
+    }
+
+    /* ===== Share: store search buttons ===== */
+    const STORES = [
+      { key:'Steam',      build: q => `https://store.steampowered.com/search/?term=${q}` },
+      { key:'PlayStation',build: q => `https://store.playstation.com/en-us/search/${q}` },
+      { key:'Xbox',       build: q => `https://www.xbox.com/en-US/search?q=${q}` },
+      { key:'Nintendo',   build: q => `https://www.nintendo.com/search/#q=${q}` },
+      { key:'Epic',       build: q => `https://store.epicgames.com/en-US/browse?q=${q}` },
+      { key:'GOG',        build: q => `https://www.gog.com/en/games?query=${q}` },
+    ];
+
+    function currentVideoId(){ return safe(()=>player.getVideoData().video_id) || ''; }
+    function currentWatchUrl(){ const id = currentVideoId(); return id ? `https://www.youtube.com/watch?v=${id}` : ''; }
+    function currentCleanTitle(){ const raw = safe(()=>player.getVideoData().title) || ''; return cleanTitle(raw); }
+
+    function renderStoreButtons(){
+      storeGrid.innerHTML = '';
+      const title = currentCleanTitle();
+      const q = encodeURIComponent(title || '');
+      for (const s of STORES) {
+        const btn = document.createElement('button');
+        btn.className = 'action store-btn';
+        btn.textContent = s.key;
+        const url = s.build(q);
+        btn.addEventListener('click', ()=> copyToClipboard(url));
+        storeGrid.appendChild(btn);
+      }
+    }
+
+    /* ===== Share modal ===== */
+    function showShare(){
+      const yt = currentWatchUrl();
+      ytUrlBox.textContent = yt || '(unavailable)';
+      ytUrlBox.title = yt || '';
+      renderStoreButtons();
+      shareModal.hidden = false;
+      document.addEventListener('keydown', escCloseShare);
+    }
+    function hideShare(){ shareModal.hidden = true; document.removeEventListener('keydown', escCloseShare); }
+    function escCloseShare(e){ if(e.key === 'Escape') hideShare(); }
+
+    /* ===== Timer modal ===== */
+    function showTimer(){
+      fillInputsFromMs(getPersistedMs());
+      timerModal.hidden = false;
+      document.addEventListener('keydown', escCloseTimer);
+    }
+    function hideTimer(){
+      timerModal.hidden = true;
+      document.removeEventListener('keydown', escCloseTimer);
+    }
+    function escCloseTimer(e){ if(e.key === 'Escape') hideTimer(); }
+
+    function toastOnce(msg='Copied!'){
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(()=>toast.classList.remove('show'), 1100);
+    }
+    async function copyToClipboard(text){
+      if (!text) return;
+      try { await navigator.clipboard.writeText(text); toastOnce('Copied to clipboard'); }
+      catch {
+        const t=document.createElement('textarea'); t.value=text; document.body.appendChild(t); t.select();
+        try{document.execCommand('copy');toastOnce('Copied to clipboard');}catch{}
+        document.body.removeChild(t);
+      }
+    }
+
+    /* ===== Auto-reset implementation ===== */
+    function msFromInputs() {
+      const h = Math.max(0, parseInt(tHours.value || '0', 10));
+      const m = Math.max(0, Math.min(59, parseInt(tMins.value || '0', 10)));
+      const s = Math.max(0, Math.min(59, parseInt(tSecs.value || '0', 10)));
+      const total = (h*3600 + m*60 + s) * 1000;
+      return isFinite(total) ? total : 0;
+    }
+    function fillInputsFromMs(ms){
+      const total = Math.floor((ms||0)/1000);
+      const h = Math.floor(total/3600);
+      const m = Math.floor((total%3600)/60);
+      const s = total%60;
+      tHours.value = h ? String(h) : '';
+      tMins.value  = m ? String(m) : '';
+      tSecs.value  = s ? String(s) : '';
+    }
+    function getPersistedMs(){
+      try { const raw = localStorage.getItem(TIMER_KEY); return raw ? Math.max(0, parseInt(raw,10)||0) : 0; } catch { return 0; }
+    }
+    function scheduleAutoReset(ms) {
+      cancelAutoReset();
+      if (!ms || ms <= 0) return;
+      autoResetDeadline = Date.now() + ms;
+      autoResetTimer = setTimeout(()=> location.reload(), ms);
+    }
+    function cancelAutoReset(){
+      if (autoResetTimer){ clearTimeout(autoResetTimer); autoResetTimer=null; autoResetDeadline=null; }
+    }
+    function persistAutoReset(ms){
+      try {
+        if (ms && ms>0) localStorage.setItem(TIMER_KEY, String(ms));
+        else localStorage.removeItem(TIMER_KEY);
+      } catch {}
+    }
+    function restoreAutoReset(){
+      const ms = getPersistedMs();
+      if (ms>0) scheduleAutoReset(ms);
+    }
+
+    /* ===== Handlers / player helpers ===== */
+    function attachHandlers(){
+      clickCatcher.addEventListener('click', ()=>{ try { player.isMuted()?player.unMute():player.mute(); updateUI(); } catch {} });
+      [titleChip, controlsChip].forEach(el=> el.addEventListener('click', e=>e.stopPropagation()));
+
+      titleCopyBtn.addEventListener('mousedown', e => e.stopPropagation());
+      titleCopyBtn.addEventListener('click', ()=>{
+        const t = (vidTitleEl.textContent || '').trim();
+        if (t) copyToClipboard(t);
+      });
+
+      playPauseBtn.addEventListener('click', ()=>{
+        const s = player.getPlayerState();
+        s===YT.PlayerState.PLAYING ? safe(()=>player.pauseVideo()) : safe(()=>player.playVideo());
+        setTimeout(updateUI, 50);
+      });
+
+      muteBtn.addEventListener('click', ()=>{ player.isMuted()? safe(()=>player.unMute()) : safe(()=>player.mute()); setTimeout(updateUI,50); });
+      volSlider.addEventListener('input', ()=>{ safe(()=>player.setVolume(parseInt(volSlider.value,10))); if(player.isMuted()){ safe(()=>player.unMute()); updateUI(); } });
+
+      prevBtn.addEventListener('click', ()=> { shuffleEnabled ? playRandom() : prevVideo(); });
+      nextBtn.addEventListener('click', ()=> { shuffleEnabled ? playRandom() : nextVideo(); });
+
+      ccBtn.addEventListener('click', toggleCC);
+      shuffleBtn.addEventListener('click', toggleShuffle);
+      resetBtn.addEventListener('click', resetLayout);
+
+      shareBtn.addEventListener('click', showShare);
+      shareBackdrop.addEventListener('click', hideShare);
+      shareClose.addEventListener('click', hideShare);
+      ytCopyBtn.addEventListener('click', ()=> copyToClipboard(ytUrlBox.textContent.trim()));
+
+      // Timer modal
+      timerOpenBtn.addEventListener('click', showTimer);
+      timerBackdrop.addEventListener('click', hideTimer);
+      timerClose.addEventListener('click', hideTimer);
+      tApply.addEventListener('click', ()=>{
+        const ms = msFromInputs();
+        persistAutoReset(ms);
+        scheduleAutoReset(ms);
+        hideTimer();
+        toastOnce(ms>0 ? 'Auto-reset scheduled' : 'Timer off');
+      });
+      tClear.addEventListener('click', ()=>{
+        tHours.value = tMins.value = tSecs.value = '';
+        persistAutoReset(0);
+        cancelAutoReset();
+        hideTimer();
+        toastOnce('Auto-reset cleared');
+      });
+
+      makeDraggable(titleChip); makeDraggable(controlsChip);
+      addResizeHandleBR(titleChip, { lockAspect:false, onResize: fitTitle });
+      addResizeHandleBR(controlsChip, { lockAspect:true,  onResize: scaleControlsToBox });
+
+      window.addEventListener('resize', ()=>{
+        clampToViewport(titleChip); clampToViewport(controlsChip);
+        persistBox(titleChip); persistBox(controlsChip);
+        fitTitle(); scaleControlsToBox();
+      });
+    }
+
+    function prevVideo(){ clearWatchdog(); safe(()=>player.previousVideo()); }
+    function nextVideo(){ clearWatchdog(); safe(()=>player.nextVideo()); }
+    function playRandom(){
+      clearWatchdog();
+      try {
+        const list = player.getPlaylist && player.getPlaylist();
+        if (list && list.length) player.playVideoAt(Math.floor(Math.random()*list.length));
+        else { const hops = 1 + Math.floor(Math.random()*5); for (let i=0; i<hops; i++) player.nextVideo(); }
+      } catch { try { player.nextVideo(); } catch {} }
+    }
+
+    function toggleCC(){
+      ccEnabled = !ccEnabled;
+      try{
+        if(ccEnabled){
+          const tracks = player.getOption ? player.getOption('captions','tracklist') : null;
+          const first = Array.isArray(tracks)&&tracks.length?tracks[0]:null;
+          if(first && first.languageCode) player.setOption('captions','track',{languageCode:first.languageCode});
+          else player.setOption('captions','track',{languageCode:'en'});
+          player.setOption('captions','reload',true);
+        } else {
+          player.setOption('captions','track',{}); player.setOption('captions','reload',true);
+        }
+      }catch{}
+      ccBtn.classList.toggle('toggled', ccEnabled);
+      ccBtn.setAttribute('aria-pressed', String(ccEnabled));
+      updateUI();
+    }
+    function toggleShuffle(){ shuffleEnabled = !shuffleEnabled; try { if (player.setShuffle) player.setShuffle(shuffleEnabled); } catch {} shuffleBtn.classList.toggle('toggled', shuffleEnabled); shuffleBtn.setAttribute('aria-pressed', String(shuffleEnabled)); }
+
+    function updateTitle(refit=false){
+      const data = safe(()=>player.getVideoData())||{};
+      const raw = data && data.title ? data.title : '';
+      const cleaned = cleanTitle(raw);
+      if (vidTitleEl.textContent !== cleaned) { setTitleText(cleaned); refit = true; }
+      if (refit) fitTitle();
+    }
+
+    function setTitleText(t){ vidTitleEl.textContent = t || ''; }
+
+    function updateUI(){
+      const isMuted = safe(()=>player.isMuted());
+      const vol    = safe(()=>player.getVolume());
+      const state  = safe(()=>player.getPlayerState());
+
+      muteBtn.lastChild.nodeValue = isMuted ? ' Unmute' : ' Mute';
+      muteIcon.setAttribute('d', isMuted ? 'M3 10v4h4l5 4V6L7 10H3z' : 'M3 10v4h4l5 4V6L7 10H3z M18 8l-2 2m0 4l2 2m-2-6l4 4');
+
+      if (state===YT.PlayerState.PLAYING) { playPauseIcon.setAttribute('d','M6 5h4v14H6zM14 5h4v14h-4z'); playPauseBtn.lastChild.nodeValue = ' Pause'; }
+      else { playPauseIcon.setAttribute('d','M8 5v14l11-7z'); playPauseBtn.lastChild.nodeValue = ' Play'; }
+
+      if(typeof vol==='number') volSlider.value = vol;
+      ccBtn.classList.toggle('toggled', ccEnabled); ccBtn.setAttribute('aria-pressed', String(ccEnabled));
+      shuffleBtn.classList.toggle('toggled', shuffleEnabled); shuffleBtn.setAttribute('aria-pressed', String(shuffleEnabled));
+    }
+
+    /* ===== Title auto-fit (keep your headroom) ===== */
+    function fitTitle(){
+      const availW = Math.max(1, titleContent.clientWidth);
+      const availH = Math.max(1, titleContent.clientHeight);
+      if (!availW || !availH) return;
+      if (!vidTitleEl.textContent) { vidTitleEl.style.fontSize = '10px'; return; }
+
+      const W_FUDGE = 0.995; // width slack
+      const H_FUDGE = 0.80;  // your extra height headroom
+
+      const testMode = (nowrap) => {
+        vidTitleEl.style.whiteSpace = nowrap ? 'nowrap' : 'normal';
+        vidTitleEl.style.wordBreak  = 'normal';
+        vidTitleEl.style.overflowWrap = 'break-word';
+        vidTitleEl.style.width = nowrap ? 'auto' : '100%';
+        let lo = 8, hi = 300, best = 10;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          vidTitleEl.style.fontSize = mid + 'px';
+          const w = Math.ceil(vidTitleEl.getBoundingClientRect().width);
+          const h = Math.ceil(vidTitleEl.getBoundingClientRect().height);
+          if (w <= availW * W_FUDGE && h <= availH * H_FUDGE) { best = mid; lo = mid + 1; }
+          else { hi = mid - 1; }
+        }
+        return best;
+      };
+
+      const fNowrap = testMode(true);
+      const fWrap   = testMode(false);
+      if (fWrap >= fNowrap) { vidTitleEl.style.whiteSpace = 'normal'; vidTitleEl.style.width = '100%'; vidTitleEl.style.fontSize = fWrap + 'px'; }
+      else { vidTitleEl.style.whiteSpace = 'nowrap'; vidTitleEl.style.width = 'auto'; vidTitleEl.style.fontSize = fNowrap + 'px'; }
+      vidTitleEl.style.textAlign = 'center';
+    }
+
+    /* ===== Controls scale ===== */
+    function initControlsBaseline(){
+      const r = controlsInner.getBoundingClientRect();
+      controlsChip.dataset.baseW = String(Math.max(1, Math.round(r.width)));
+      controlsChip.dataset.baseH = String(Math.max(1, Math.round(r.height)));
+      controlsChip.dataset.aspect = (r.width / r.height).toFixed(4);
+      if (!controlsChip.style.width)  controlsChip.style.width  = r.width + 'px';
+      if (!controlsChip.style.height) controlsChip.style.height = r.height + 'px';
+      scaleControlsToBox();
+    }
+    function scaleControlsToBox(){
+      const baseW = parseFloat(controlsChip.dataset.baseW);
+      const baseH = parseFloat(controlsChip.dataset.baseH);
+      const w = controlsChip.getBoundingClientRect().width;
+      const h = controlsChip.getBoundingClientRect().height;
+      const s = Math.max(0.05, Math.min(w/baseW, h/baseH));
+      controlsContent.style.width = baseW + 'px';
+      controlsContent.style.height = baseH + 'px';
+      controlsContent.style.transform = `scale(${s})`;
+      const offsetX = (w - baseW*s)/2, offsetY = (h - baseH*s)/2;
+      controlsContent.style.left = offsetX + 'px';
+      controlsContent.style.top  = offsetY + 'px';
+    }
+
+    /* ===== Drag/Resize/Persist ===== */
+    function makeDraggable(el){
+      let sx=0, sy=0, baseLeft=0, baseTop=0, dragging=false;
+      const onDown = (e)=>{
+        if(e.type==='mousedown' && e.button!==0) return;
+        if (e.target.classList.contains('handle')) return;
+        const pt = point(e);
+        const rect = el.getBoundingClientRect();
+        if (el.classList.contains('centered')) { forcePixelPosition(el, rect); }
+        sx=pt.x; sy=pt.y; baseLeft=rect.left; baseTop=rect.top; dragging=true;
+        el.classList.add('dragging'); document.body.style.userSelect='none';
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        window.addEventListener('touchmove', onMove, {passive:false});
+        window.addEventListener('touchend', onUp);
+      };
+      const onMove = (e)=>{
+        if(!dragging) return; e.preventDefault();
+        const pt=point(e);
+        setPixelPos(el, baseLeft + (pt.x - sx), baseTop + (pt.y - sy)); clampToViewport(el);
+      };
+      const onUp = ()=>{
+        if(!dragging) return; dragging=false; el.classList.remove('dragging'); document.body.style.userSelect='';
+        persistBox(el);
+        if (el.id==='chip-title') fitTitle(); else scaleControlsToBox();
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onUp);
+      };
+      el.addEventListener('mousedown', onDown);
+      el.addEventListener('touchstart', onDown, {passive:false});
+    }
+
+    function addResizeHandleBR(box, opts={}){
+      const handle = box.querySelector('.handle.br');
+      const lockAspect = !!opts.lockAspect; const onResize = typeof opts.onResize === 'function' ? opts.onResize : ()=>{};
+      let start = null;
+      handle.addEventListener('mousedown', onDown);
+      handle.addEventListener('touchstart', onDown, {passive:false});
+      function onDown(e){
+        if(e.type==='mousedown' && e.button!==0) return;
+        e.stopPropagation();
+        const rect = box.getBoundingClientRect();
+        if (box.classList.contains('centered')) { forcePixelPosition(box, rect); }
+        start = { x: point(e).x, y: point(e).y, left: rect.left, top: rect.top, w: rect.width, h: rect.height };
+        box.classList.add('dragging'); document.body.style.userSelect='none';
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        window.addEventListener('touchmove', onMove, {passive:false});
+        window.addEventListener('touchend', onUp);
+      }
+      function onMove(e){
+        if(!start) return; e.preventDefault();
+        const p = point(e); const minW = 160, minH = 48; let newW, newH;
+        if (lockAspect) {
+          const aspect = parseFloat(box.dataset.aspect) || (start.w/start.h);
+          const dw = Math.max(minW, start.w + (p.x - start.x));
+          const dh = Math.max(minH, start.h + (p.y - start.y));
+          const wFromW = dw, hFromW = wFromW / aspect;
+          const hFromH = dh, wFromH = hFromH * aspect;
+          const d1 = Math.hypot(wFromW - start.w, hFromW - start.h);
+          const d2 = Math.hypot(wFromH - start.w, wFromH - start.h);
+          if (d1 >= d2) { newW = wFromW; newH = hFromW; } else { newW = wFromH; newH = hFromH; }
+        } else { newW = Math.max(minW, start.w + (p.x - start.x)); newH = Math.max(minH, start.h + (p.y - start.y)); }
+        setPixelPos(box, start.left, start.top); box.style.width  = newW + 'px'; box.style.height = newH + 'px';
+        clampToViewport(box); onResize();
+      }
+      function onUp(){
+        if(!start) return; box.classList.remove('dragging'); document.body.style.userSelect='';
+        persistBox(box); start = null;
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onUp);
+      }
+    }
+
+    const KEY_PREFIX = 'gtwp_box_';
+    function persistBox(el){
+      const key = KEY_PREFIX + (el.dataset.key || el.id);
+      const r = el.getBoundingClientRect();
+      localStorage.setItem(key, JSON.stringify({ left:r.left, top:r.top, width:r.width, height:r.height }));
+    }
+    function restoreBox(el){
+      const key = KEY_PREFIX + (el.dataset.key || el.id);
+      const raw = localStorage.getItem(key);
+      if(raw){ try{ const {left, top, width, height} = JSON.parse(raw);
+        el.classList.remove('centered'); setPixelPos(el, left, top); el.style.width = width + 'px'; el.style.height = height + 'px';
+        if (el.id==='chip-controls') scaleControlsToBox();
+      }catch{} } else {
+        if (el.id==='chip-title') { el.style.width = '600px'; el.style.height='90px'; }
+        if (el.id==='chip-controls') { const r = controlsInner.getBoundingClientRect(); el.style.width  = r.width + 'px'; el.style.height = r.height + 'px'; scaleControlsToBox(); }
+      }
+    }
+    function resetLayout(){
+      try { localStorage.removeItem(KEY_PREFIX + 'title'); localStorage.removeItem(KEY_PREFIX + 'controls'); } catch {}
+      [titleChip, controlsChip].forEach(el=> el.classList.add('centered'));
+      titleChip.style.width='600px'; titleChip.style.height='90px';
+      const r = controlsInner.getBoundingClientRect();
+      controlsChip.style.width = r.width + 'px'; controlsChip.style.height = r.height + 'px';
+      fitTitle(); scaleControlsToBox();
+    }
+
+    function setPixelPos(el, left, top){ el.style.left = left + 'px'; el.style.top = top + 'px'; el.style.transform = 'none'; }
+    function clampToViewport(el){
+      const r = el.getBoundingClientRect(); const pad=8;
+      const maxLeft = window.innerWidth - r.width - pad; const maxTop = window.innerHeight - r.height - pad;
+      const left = Math.min(Math.max(r.left, pad), Math.max(maxLeft, pad));
+      const top  = Math.min(Math.max(r.top,  pad), Math.max(maxTop,  pad));
+      setPixelPos(el,left,top);
+    }
+    function forcePixelPosition(el, rect){ el.classList.remove('centered'); setPixelPos(el, rect.left, rect.top); }
+    function point(e){ return e.touches && e.touches.length ? {x:e.touches[0].clientX, y:e.touches[0].clientY} : {x:e.clientX, y:e.clientY}; }
+    function safe(fn){ try{ return fn(); }catch{ return null; } }
+
+    function resetWatchdog(ms){
+      clearWatchdog();
+      watchdog = setTimeout(()=> {
+        try {
+          if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            shuffleEnabled ? playRandom() : nextVideo();
+            setTimeout(() => ensurePlayingOrSkip(6), 900);
+          }
+        } catch {
+          nextVideo(); setTimeout(() => ensurePlayingOrSkip(6), 900);
+        }
+      }, ms);
+    }
+    function clearWatchdog(){ if(watchdog){ clearTimeout(watchdog); watchdog=null; } }
+  </script>
+</body>
+</html>
